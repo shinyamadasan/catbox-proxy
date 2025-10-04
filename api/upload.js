@@ -5,7 +5,7 @@ export const config = {
 };
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*", // allow all origins (or replace * with your site URL for stricter security)
+  "Access-Control-Allow-Origin": "*", // allow all origins (or replace * with your site URL)
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
@@ -32,18 +32,19 @@ export default async function handler(req, res) {
     }
     const buffer = Buffer.concat(chunks);
 
-    // Forward the request to Catbox
+    // Rebuild the form data for Catbox
+    const formData = new FormData();
+    formData.append("reqtype", "fileupload");
+    formData.append("fileToUpload", new Blob([buffer]), "upload.png");
+
+    // Forward to Catbox
     const response = await fetch("https://catbox.moe/user/api.php", {
       method: "POST",
-      headers: {
-        "Content-Type": req.headers["content-type"] || "application/octet-stream",
-      },
-      body: buffer,
+      body: formData,
     });
 
     const text = await response.text();
 
-    // Return Catbox response
     if (!response.ok || !text.startsWith("http")) {
       res.writeHead(502, corsHeaders);
       res.end(JSON.stringify({ error: "Catbox upload failed", details: text }));

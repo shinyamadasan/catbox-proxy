@@ -1,56 +1,41 @@
- // api/upload.js (CommonJS for simplicity)
-const formidable = require("formidable");
-const fs = require("fs");
-const FormData = require("form-data");
+export const config = {
+  api: {
+    bodyParser: false, // disable default body parsing
+  },
+};
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed. Use POST." });
     return;
   }
 
-  const form = formidable({ multiples: false });
+  try {
+    // Read the incoming request body as a stream
+    const chunks = [];
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
+    const buffer = Buffer.concat(chunks);
 
-  form.parse(req, async (err, fields, files) => {
-    if (err) {
-      res.status(500).json({ error: "File parsing failed" });
+    // Forward the raw body to Catbox
+    const response = await fetch("https://catbox.moe/user/api.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": req.headers["content-type"] || "application/octet-stream",
+      },
+      body: buffer,
+    });
+
+    const text = await response.text();
+
+    if (!response.ok || !text.startsWith("http")) {
+      res.status(502).json({ error: "Catbox upload failed", details: text });
       return;
     }
 
-    try {
-      const file = files.file;
-      if (!file) {
-        res.status(400).json({ error: "No file provided. Use 'file' field." });
-        return;
-      }
-
-      const fd = new FormData();
-      fd.append("reqtype", "fileupload");
-      fd.append("fileToUpload", fs.createReadStream(file.filepath), file.originalFilename);
-
-      const response = await fetch("https://catbox.moe/user/api.php", {
-        method: "POST",
-        body: fd,
-        headers: fd.getHeaders()
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        res.status(502).json({ error: "Catbox upload failed", details: text });
-        return;
-      }
-
-      const url = await response.text();
-
-      // Basic check: Catbox returns a URL string when successful
-      if (!url.startsWith("http")) {
-        res.status(502).json({ error: "Unexpected response from Catbox", details: url });
-        return;
-      }
-
-      res.status(200).json({ url });
-    } catch (error) {
-      res.status(500).json({ error: "Upload failed", details: error.message });
-    }
-  });
-};
+    res.status(200).json({ url: text });
+  } catch (err) {
+    res.status(500).json({ error: "Proxy failed", details: err.message });
+  }
+}

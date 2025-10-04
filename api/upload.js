@@ -1,17 +1,16 @@
 // api/upload.js
 
 export const config = {
-  api: { bodyParser: false }, // disable default body parsing
+  api: { bodyParser: false },
 };
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*", // allow all origins (or replace * with your site URL)
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
 export default async function handler(req, res) {
-  // Handle preflight requests
   if (req.method === "OPTIONS") {
     res.writeHead(200, corsHeaders);
     res.end();
@@ -25,34 +24,31 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Collect the raw request body
     const chunks = [];
-    for await (const chunk of req) {
-      chunks.push(chunk);
-    }
+    for await (const chunk of req) chunks.push(chunk);
     const buffer = Buffer.concat(chunks);
 
-    // Rebuild the form data for Catbox
     const formData = new FormData();
     formData.append("reqtype", "fileupload");
     formData.append("fileToUpload", new Blob([buffer]), "upload.png");
 
-    // Forward to Catbox
     const response = await fetch("https://catbox.moe/user/api.php", {
       method: "POST",
       body: formData,
     });
 
-    const text = await response.text();
+    const text = (await response.text()).trim();
 
-    if (!response.ok || !text.startsWith("http")) {
-      res.writeHead(502, corsHeaders);
-      res.end(JSON.stringify({ error: "Catbox upload failed", details: text }));
+    // ✅ Treat any http(s) URL as success
+    if (text.startsWith("http")) {
+      res.writeHead(200, corsHeaders);
+      res.end(JSON.stringify({ url: text }));
       return;
     }
 
-    res.writeHead(200, corsHeaders);
-    res.end(JSON.stringify({ url: text }));
+    // Otherwise, return error
+    res.writeHead(502, corsHeaders);
+    res.end(JSON.stringify({ error: "Catbox upload failed", details: text }));
   } catch (err) {
     console.error("Proxy error:", err);
     res.writeHead(500, corsHeaders);
